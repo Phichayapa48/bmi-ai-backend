@@ -11,15 +11,6 @@ from app.utils import preprocess_image
 app = FastAPI(title="BMI Face AI API")
 
 # -------------------------
-# CLASS INFO
-# -------------------------
-CLASS_INFO = {
-    0: ("underweight", "คุณมีน้ำหนักต่ำกว่าเกณฑ์ 🥺"),
-    1: ("normal", "คุณมีน้ำหนักอยู่ในเกณฑ์ปกติ 👍"),
-    2: ("overweight", "คุณมีน้ำหนักเกินเกณฑ์ 😅"),
-}
-
-# -------------------------
 # Load face detector
 # -------------------------
 face_cascade = cv2.CascadeClassifier(
@@ -27,7 +18,7 @@ face_cascade = cv2.CascadeClassifier(
 )
 
 # -------------------------
-# Startup: load model once
+# Startup
 # -------------------------
 @app.on_event("startup")
 def load_model_on_startup():
@@ -37,6 +28,22 @@ def load_model_on_startup():
 def root():
     return {"status": "ok"}
 
+# -------------------------
+# BMI Category
+# -------------------------
+def bmi_category(bmi: float):
+    if bmi < 18.5:
+        return "underweight", "คุณมีน้ำหนักต่ำกว่าเกณฑ์ 🥺"
+    elif bmi < 23:
+        return "normal", "คุณมีน้ำหนักอยู่ในเกณฑ์ปกติ 👍"
+    elif bmi < 25:
+        return "overweight", "คุณมีน้ำหนักเกินเล็กน้อย 😅"
+    else:
+        return "obese", "คุณมีน้ำหนักเกินเกณฑ์มาก ⚠️"
+
+# -------------------------
+# Predict
+# -------------------------
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     # ---------- Read image ----------
@@ -59,8 +66,8 @@ async def predict(file: UploadFile = File(...)):
 
     if len(faces) == 0:
         return {
-            "class_id": -1,
-            "class_name": "no_face",
+            "bmi": None,
+            "category": "no_face",
             "confidence": 0.0,
             "message": "ไม่พบใบหน้าคนในภาพ กรุณาถ่ายรูปใบหน้าให้ชัดเจนอีกครั้งนะคะ 🙂"
         }
@@ -71,36 +78,33 @@ async def predict(file: UploadFile = File(...)):
     face_img = face_img.resize((224, 224))
 
     # ---------- Preprocess ----------
+    x_tensor = preprocess_image(face_img)
+
+    # ---------- Predict BMI ----------
     model = get_model()
-    x_tensor = preprocess_image(face_img)  # (1, 3, 224, 224)
-
-    # ---------- Predict ----------
     with torch.no_grad():
-        logits = model(x_tensor)
-        probs = torch.softmax(logits, dim=1)
+        bmi_pred = model(x_tensor).item()
 
-        top2_probs, top2_indices = torch.topk(probs, k=2, dim=1)
-        top1_prob = top2_probs[0][0].item()
-        top2_prob = top2_probs[0][1].item()
-        class_id = top2_indices[0][0].item()
+    # ---------- Confidence (Regression heuristic) ----------
+    # สมมุติ error ±2 BMI = confidence ต่ำ
+    error_margin = 2.0
+    confidence = max(0.0, 1.0 - abs(bmi_pred - round(bmi_pred)) / error_margin)
 
-        confidence_gap = top1_prob - top2_prob
-
-    # ---------- Uncertain case ----------
-    if confidence_gap < 0.15:
+    # ---------- Uncertain ----------
+    if confidence < 0.5 or bmi_pred < 10 or bmi_pred > 45:
         return {
-            "class_id": -1,
-            "class_name": "uncertain",
-            "confidence": round(top1_prob, 2),
+            "bmi": round(bmi_pred, 1),
+            "category": "uncertain",
+            "confidence": round(confidence, 2),
             "message": "ระบบยังไม่มั่นใจในผลลัพธ์ กรุณาลองถ่ายรูปใหม่อีกครั้งนะคะ 🙂"
         }
 
-    # ---------- Normal case ----------
-    class_name, message = CLASS_INFO[class_id]
+    # ---------- Normal ----------
+    category, message = bmi_category(bmi_pred)
 
     return {
-        "class_id": class_id,
-        "class_name": class_name,
-        "confidence": round(top1_prob, 2),
+        "bmi": round(bmi_pred, 1),
+        "category": category,
+        "confidence": round(confidence, 2),
         "message": message
     }

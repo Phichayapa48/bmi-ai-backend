@@ -1,8 +1,14 @@
 from torchvision import transforms
 import torch
 
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),
+# =========================
+# Image Preprocess
+# =========================
+
+IMAGE_SIZE = 224
+
+_transform = transforms.Compose([
+    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
     transforms.ToTensor(),
     transforms.Normalize(
         mean=[0.485, 0.456, 0.406],
@@ -10,6 +16,15 @@ transform = transforms.Compose([
     )
 ])
 
+
 def preprocess_image(image):
-    x = transform(image).unsqueeze(0)
+    """
+    image: PIL.Image (RGB)
+    return: Tensor [1, 3, 224, 224] on CPU
+    """
+
+    x = _transform(image)
+    x = x.unsqueeze(0)           # [1, 3, 224, 224]
+    x = x.to(dtype=torch.float32)
+
     return x

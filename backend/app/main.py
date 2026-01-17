@@ -16,7 +16,6 @@ CLASS_INFO = {
 
 @app.on_event("startup")
 def load_model_on_startup():
-    # Render จะโหลดโมเดลจาก Supabase ตอน start
     get_model()
 
 @app.get("/")

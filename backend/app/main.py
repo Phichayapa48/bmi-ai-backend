@@ -26,6 +26,9 @@ face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 )
 
+# -------------------------
+# Startup: load model once
+# -------------------------
 @app.on_event("startup")
 def load_model_on_startup():
     get_model()
@@ -36,7 +39,7 @@ def root():
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    # ---------- อ่านรูป ----------
+    # ---------- Read image ----------
     try:
         image_bytes = await file.read()
         pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
@@ -62,31 +65,29 @@ async def predict(file: UploadFile = File(...)):
             "message": "ไม่พบใบหน้าคนในภาพ กรุณาถ่ายรูปใบหน้าให้ชัดเจนอีกครั้งนะคะ 🙂"
         }
 
-    # ---------- เลือกหน้าใหญ่สุด ----------
+    # ---------- Select largest face ----------
     x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
     face_img = pil_image.crop((x, y, x + w, y + h))
-
-    # ---------- Resize เป็น 224x224 ----------
     face_img = face_img.resize((224, 224))
 
     # ---------- Preprocess ----------
     model = get_model()
-    x_tensor = preprocess_image(face_img)
+    x_tensor = preprocess_image(face_img)  # (1, 3, 224, 224)
 
     # ---------- Predict ----------
     with torch.no_grad():
         logits = model(x_tensor)
         probs = torch.softmax(logits, dim=1)
 
-        top2 = torch.topk(probs, k=2, dim=1)
-        top1_prob = top2.values[0][0].item()
-        top2_prob = top2.values[0][1].item()
-        class_id = top2.indices[0][0].item()
+        top2_probs, top2_indices = torch.topk(probs, k=2, dim=1)
+        top1_prob = top2_probs[0][0].item()
+        top2_prob = top2_probs[0][1].item()
+        class_id = top2_indices[0][0].item()
 
-        gap = top1_prob - top2_prob
+        confidence_gap = top1_prob - top2_prob
 
-    # ---------- กรณีไม่มั่นใจ ----------
-    if gap < 0.15:
+    # ---------- Uncertain case ----------
+    if confidence_gap < 0.15:
         return {
             "class_id": -1,
             "class_name": "uncertain",
@@ -94,7 +95,7 @@ async def predict(file: UploadFile = File(...)):
             "message": "ระบบยังไม่มั่นใจในผลลัพธ์ กรุณาลองถ่ายรูปใหม่อีกครั้งนะคะ 🙂"
         }
 
-    # ---------- กรณีปกติ ----------
+    # ---------- Normal case ----------
     class_name, message = CLASS_INFO[class_id]
 
     return {

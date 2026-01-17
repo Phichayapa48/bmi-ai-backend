@@ -11,11 +11,12 @@ app = FastAPI(title="BMI Face AI API")
 CLASS_INFO = {
     0: ("underweight", "คุณมีน้ำหนักต่ำกว่าเกณฑ์ 🥺"),
     1: ("normal", "คุณมีน้ำหนักอยู่ในเกณฑ์ปกติ 👍"),
-    2: ("overweight", "คุณมีน้ำหนักเกินเกณฑ์ 😅")
+    2: ("overweight", "คุณมีน้ำหนักเกินเกณฑ์ 😅"),
 }
 
 @app.on_event("startup")
 def load_model_on_startup():
+    # โหลดโมเดลตอน Render start
     get_model()
 
 @app.get("/")
@@ -24,6 +25,7 @@ def root():
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
+    # ---------- อ่านรูป ----------
     try:
         image_bytes = await file.read()
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
@@ -33,17 +35,35 @@ async def predict(file: UploadFile = File(...)):
     model = get_model()
     x = preprocess_image(image)
 
+    # ---------- Predict ----------
     with torch.no_grad():
         logits = model(x)
         probs = torch.softmax(logits, dim=1)
-        class_id = probs.argmax(dim=1).item()
-        confidence = float(probs[0][class_id])
 
+        # เอา top-2 class
+        top2 = torch.topk(probs, k=2, dim=1)
+        top1_prob = top2.values[0][0].item()
+        top2_prob = top2.values[0][1].item()
+        class_id = top2.indices[0][0].item()
+
+        gap = top1_prob - top2_prob
+
+    # ---------- กรณีไม่มั่นใจ ----------
+    # ค่า 0.15 ปรับได้ (0.1–0.2 กำลังดี)
+    if gap < 0.15:
+        return {
+            "class_id": -1,
+            "class_name": "uncertain",
+            "confidence": round(top1_prob, 2),
+            "message": "ระบบยังไม่มั่นใจในผลลัพธ์ กรุณาลองถ่ายรูปใหม่อีกครั้งนะคะ 🙂"
+        }
+
+    # ---------- กรณีปกติ ----------
     class_name, message = CLASS_INFO[class_id]
 
     return {
         "class_id": class_id,
         "class_name": class_name,
-        "confidence": round(confidence, 2),
+        "confidence": round(top1_prob, 2),
         "message": message
     }

@@ -12,16 +12,8 @@ _transform = transforms.Compose([
     )
 ])
 
-def preprocess_image(image, device="cpu"):
-    """
-    image : PIL.Image (RGB)
-    return: Tensor [1, 3, 224, 224] on device
-    """
-    if image.mode != "RGB":
-        image = image.convert("RGB")
-
+def preprocess_image(image):
     x = _transform(image)
-    x = x.unsqueeze(0)
-    x = x.to(device=device, dtype=torch.float32)
-
+    x = x.unsqueeze(0)          # [1,3,224,224]
+    x = x.to(dtype=torch.float32)
     return x

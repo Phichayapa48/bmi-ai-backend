@@ -83,7 +83,8 @@ async def predict(file: UploadFile = File(...)):
     # ---------- Predict BMI ----------
     model = get_model()
     with torch.no_grad():
-        bmi_pred = model(x_tensor).item()
+        pred = model(x)
+        bmi = float(pred.item())
 
     # ---------- Confidence (Regression heuristic) ----------
     # สมมุติ error ±2 BMI = confidence ต่ำ

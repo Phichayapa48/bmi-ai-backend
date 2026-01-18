@@ -4,52 +4,42 @@ import torch
 import torch.nn as nn
 from torchvision import models
 
-# =========================
-# Config
-# =========================
-MODEL_URL = os.getenv("MODEL_URL")      # URL .pth จาก Supabase
+MODEL_URL = os.getenv("MODEL_URL")   # URL .pth จาก Supabase
 MODEL_PATH = "model.pth"
-DEVICE = torch.device("cpu")
+DEVICE = "cpu"
 
 _MODEL = None
-
 
 # =========================
 # Download model
 # =========================
 def download_model():
     if os.path.exists(MODEL_PATH):
-        print("📦 Model already exists")
+        print("📦 Model exists")
         return
 
     if not MODEL_URL:
-        raise RuntimeError("❌ MODEL_URL is not set")
+        raise RuntimeError("MODEL_URL is not set")
 
-    print("⬇️ Downloading model (.pth)...")
+    print("⬇️ Downloading model from:", MODEL_URL)
     r = requests.get(MODEL_URL, stream=True, timeout=60)
     r.raise_for_status()
 
     with open(MODEL_PATH, "wb") as f:
-        for chunk in r.iter_content(chunk_size=8192):
-            if chunk:
-                f.write(chunk)
+        for chunk in r.iter_content(8192):
+            f.write(chunk)
 
-    print("✅ Model downloaded successfully")
-
+    print("✅ Model downloaded")
 
 # =========================
-# Build model architecture
+# Build architecture
 # =========================
 def build_model():
     model = models.mobilenet_v3_large(weights=None)
-
-    # Regression head (BMI)
     model.classifier[3] = nn.Linear(
         model.classifier[3].in_features, 1
     )
-
     return model
-
 
 # =========================
 # Load model
@@ -57,34 +47,19 @@ def build_model():
 def load_model():
     download_model()
 
-    print("🧠 Loading PyTorch model (.pth)...")
-
+    print("🧠 Loading model (.pth)")
     model = build_model()
 
-    state_dict = torch.load(
-        MODEL_PATH,
-        map_location=DEVICE
-    )
+    state_dict = torch.load(MODEL_PATH, map_location=DEVICE)
+    model.load_state_dict(state_dict)
 
-    # 🔧 รองรับกรณีมี prefix เช่น "module."
-    if any(k.startswith("module.") for k in state_dict.keys()):
-        print("⚠️ Removing 'module.' prefix from state_dict")
-        state_dict = {
-            k.replace("module.", ""): v
-            for k, v in state_dict.items()
-        }
-
-    model.load_state_dict(state_dict, strict=True)
-
-    model.to(DEVICE)
     model.eval()
+    model.to(DEVICE)
 
-    print("✅ Model loaded and ready")
     return model
 
-
 # =========================
-# Singleton accessor
+# Singleton
 # =========================
 def get_model():
     global _MODEL

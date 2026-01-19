@@ -16,6 +16,18 @@ app = FastAPI()
 # =========================
 model = None
 
+# =========================
+# CLASS CONFIG
+# =========================
+LABELS = ["under", "normal", "over"]
+
+# ค่า BMI representative (ปรับได้)
+BMI_MAP = {
+    "under": 17.5,
+    "normal": 22.0,
+    "over": 27.5
+}
+
 
 @app.get("/")
 def health():
@@ -41,7 +53,7 @@ async def predict(file: UploadFile = File(...)):
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
         # =========================
-        # 2️⃣ ตรวจคุณภาพภาพ
+        # 2️⃣ Quality check
         # =========================
         ok, reason = quality_check(image)
         if not ok:
@@ -56,22 +68,27 @@ async def predict(file: UploadFile = File(...)):
         face = detect_and_crop_face(image)
 
         # =========================
-        # 4️⃣ preprocess (resize 224 🔥)
+        # 4️⃣ preprocess (resize 224)
         # =========================
         x = preprocess_image(face)
 
         # =========================
-        # 5️⃣ predict
+        # 5️⃣ predict (3-class)
         # =========================
         with torch.no_grad():
-            y = model(x)
-            bmi = float(y.squeeze().item())
+            logits = model(x)
+            probs = torch.softmax(logits, dim=1)
 
-        # (optional) calibration ถ้าอยากใช้
-        # bmi = bmi * 1.08 + 1.5
+            cls_idx = probs.argmax(dim=1).item()
+            cls_name = LABELS[cls_idx]
+            confidence = float(probs[0, cls_idx])
+
+            bmi_estimate = BMI_MAP[cls_name]
 
         return {
-            "bmi": round(bmi, 2),
+            "category": cls_name,
+            "confidence": round(confidence, 3),
+            "bmi_estimate": bmi_estimate,
             "message": "success"
         }
 

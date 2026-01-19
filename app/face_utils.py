@@ -2,27 +2,26 @@ import cv2
 import numpy as np
 from PIL import Image
 
-# โหลด Haar Cascade
 FACE_CASCADE = cv2.CascadeClassifier(
     cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 )
 
-def detect_and_crop_face(image: Image.Image) -> Image.Image:
+def detect_and_crop_face(image: Image.Image) -> Image.Image | None:
     img = np.array(image)
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
     faces = FACE_CASCADE.detectMultiScale(
         gray,
         scaleFactor=1.1,
-        minNeighbors=4,
+        minNeighbors=3,      # 👈 ลดลง ช่วย selfie
         minSize=(60, 60)
     )
 
-    # ❗️ไม่เจอหน้า → ใช้ทั้งภาพ (สำคัญมาก)
+    # ❌ ไม่เจอหน้า → ตัดจบ
     if len(faces) == 0:
-        return image
+        return None
 
-    # เลือกหน้าที่ใหญ่ที่สุด
+    # เลือกหน้าที่ใหญ่สุด
     x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
 
     pad = int(0.2 * w)

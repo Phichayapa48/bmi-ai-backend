@@ -6,7 +6,8 @@ import torch
 
 from app.model import get_model
 from app.utils import preprocess_image
-from app.face_utils import detect_and_crop_face   # 🔥 เพิ่ม
+from app.face_utils import detect_and_crop_face
+from app.quality_check import quality_check   # 🔥 เพิ่ม
 
 app = FastAPI()
 
@@ -19,7 +20,8 @@ def health():
 @app.on_event("startup")
 def startup_event():
     print("🚀 Loading model...")
-    get_model()
+    model = get_model()
+    model.eval()
     print("✅ Model ready")
 
 
@@ -33,21 +35,29 @@ async def predict(file: UploadFile = File(...)):
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
         # =========================
-        # 2️⃣ ตรวจจับ + crop ใบหน้า
+        # 2️⃣ ตรวจคุณภาพภาพ (Quality Gate)
+        # =========================
+        ok, reason = quality_check(image)
+        if not ok:
+            return {
+                "error": "low_image_quality",
+                "message": reason
+            }
+
+        # =========================
+        # 3️⃣ ตรวจจับ + crop ใบหน้า
         # =========================
         face = detect_and_crop_face(image)
 
         # =========================
-        # 3️⃣ preprocess ให้ตรงตอน train
+        # 4️⃣ preprocess ให้ตรงตอน train
         # =========================
         x = preprocess_image(face)
 
         # =========================
-        # 4️⃣ predict
+        # 5️⃣ predict
         # =========================
         model = get_model()
-        model.eval()
-
         with torch.no_grad():
             y = model(x)
             bmi = float(y.squeeze().item())
@@ -64,7 +74,7 @@ async def predict(file: UploadFile = File(...)):
             "message": str(ve)
         }
 
-    except Exception as e:
+    except Exception:
         print("❌ Predict error")
         traceback.print_exc()
         return {

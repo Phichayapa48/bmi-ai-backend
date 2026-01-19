@@ -90,7 +90,6 @@ async def predict(file: UploadFile = File(...)):
             "category": cls_name,
             "confidence": round(confidence, 3),
             "bmi_estimate": bmi_estimate,
-            "message": "success"
         }
 
     except Exception:

@@ -50,40 +50,49 @@ async def predict(file: UploadFile = File(...)):
         # 1️⃣ อ่านรูป
         # =========================
         image_bytes = await file.read()
+
+        if len(image_bytes) == 0:
+            return {
+                "error": "empty_file",
+                "message": "ไม่พบข้อมูลรูปภาพ"
+            }
+
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
         # =========================
-        # 2️⃣ Quality check
+        # 2️⃣ Quality check (soft)
         # =========================
         ok, reason = quality_check(image)
         if not ok:
-            return {
-                "error": "low_image_quality",
-                "message": reason
-            }
+            # ❗️ไม่ reject ทิ้ง แค่ log เตือน
+            print(f"⚠️ Quality warning: {reason}")
 
         # =========================
         # 3️⃣ detect + crop ใบหน้า
+        # (ถ้าไม่เจอหน้า → ใช้รูปทั้งภาพ)
         # =========================
-        face = detect_and_crop_face(image)
+        face_image = detect_and_crop_face(image)
 
         # =========================
-        # 4️⃣ preprocess (resize 224)
+        # 4️⃣ preprocess
         # =========================
-        x = preprocess_image(face)
+        x = preprocess_image(face_image)
 
         # =========================
-        # 5️⃣ predict (3-class)
+        # 5️⃣ predict
         # =========================
         with torch.no_grad():
             logits = model(x)
             probs = torch.softmax(logits, dim=1)
 
-            cls_idx = probs.argmax(dim=1).item()
+            cls_idx = int(probs.argmax(dim=1).item())
             cls_name = LABELS[cls_idx]
             confidence = float(probs[0, cls_idx])
 
-            bmi_estimate = BMI_MAP[cls_name]
+        # =========================
+        # 6️⃣ post-process
+        # =========================
+        bmi_estimate = BMI_MAP.get(cls_name, None)
 
         return {
             "category": cls_name,
@@ -98,7 +107,7 @@ async def predict(file: UploadFile = File(...)):
             "message": str(ve)
         }
 
-    except Exception:
+    except Exception as e:
         print("❌ Predict error")
         traceback.print_exc()
         return {

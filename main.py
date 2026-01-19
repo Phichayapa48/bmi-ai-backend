@@ -8,7 +8,6 @@ from app.model import get_model
 from app.utils import preprocess_image
 from app.face_utils import detect_and_crop_face
 from app.quality_check import quality_check
-from app.decision import decide
 
 app = FastAPI()
 
@@ -69,19 +68,19 @@ async def predict(file: UploadFile = File(...)):
 
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        # 2️⃣ Quality check (soft check)
+        # 2️⃣ Quality check (soft)
         ok, reason = quality_check(image)
         if not ok:
             print(f"⚠️ Quality warning: {reason}")
 
-        # 3️⃣ Detect face (ไม่บังคับ แต่ลดความมั่นใจ)
+        # 3️⃣ Detect face (ช่วย crop แต่ไม่ตัดสิน)
         face_image, has_face = detect_and_crop_face(image)
 
         # 4️⃣ Preprocess (224x224)
         x = preprocess_image(face_image)
         x = x.to(next(model.parameters()).device)
 
-        # 5️⃣ Predict
+        # 5️⃣ Predict (โมเดลตัดสินจริง)
         with torch.no_grad():
             logits = model(x)
             probs = torch.softmax(logits, dim=1)
@@ -90,23 +89,21 @@ async def predict(file: UploadFile = File(...)):
             cls_name = BMI_LABELS[cls_idx]
             confidence = float(probs[0, cls_idx])
 
-        # 6️⃣ ถ้าไม่เจอหน้า → ลด confidence
+        # 6️⃣ ถ้าไม่เจอหน้า → ลดความมั่นใจ (UX only)
         if not has_face:
             confidence *= 0.7
 
-        # 7️⃣ Decision layer (ตัดสินใจจริง)
-        decision = decide(cls_name, confidence)
-
-        if not decision["ok"]:
+        # 7️⃣ ถ้าความมั่นใจต่ำมาก → ขอรูปใหม่
+        if confidence < 0.45:
             return {
                 "error": "low_confidence",
-                "message": decision["message"]
+                "message": "ไม่สามารถประเมินได้อย่างมั่นใจ กรุณาถ่ายภาพใบหน้าให้ชัดเจน"
             }
 
         # 8️⃣ Final response
         return {
-            "status": BMI_STATUS_TH[decision["class"]],
-            "confidence": decision["confidence"]
+            "status": BMI_STATUS_TH[cls_name],
+            "confidence": round(confidence, 3)
         }
 
     except Exception:

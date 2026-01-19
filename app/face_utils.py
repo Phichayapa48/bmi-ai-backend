@@ -6,20 +6,20 @@ FACE_CASCADE = cv2.CascadeClassifier(
     cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 )
 
-def detect_and_crop_face(image: Image.Image) -> Image.Image | None:
+def detect_and_crop_face(image: Image.Image):
     img = np.array(image)
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
     faces = FACE_CASCADE.detectMultiScale(
         gray,
-        scaleFactor=1.1,
-        minNeighbors=3,      # 👈 ลดลง ช่วย selfie
-        minSize=(60, 60)
+        scaleFactor=1.05,     # 👈 ผ่อนลง
+        minNeighbors=2,       # 👈 ผ่อนลง
+        minSize=(40, 40)      # 👈 สำคัญมาก
     )
 
-    # ❌ ไม่เจอหน้า → ตัดจบ
+    # ✅ ไม่เจอหน้า → ใช้ทั้งภาพ (ห้าม return None)
     if len(faces) == 0:
-        return None
+        return image, False
 
     # เลือกหน้าที่ใหญ่สุด
     x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
@@ -31,4 +31,4 @@ def detect_and_crop_face(image: Image.Image) -> Image.Image | None:
     y2 = min(y + h + pad, img.shape[0])
 
     face = img[y1:y2, x1:x2]
-    return Image.fromarray(face)
+    return Image.fromarray(face), True

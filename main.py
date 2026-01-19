@@ -9,6 +9,13 @@ from app.utils import preprocess_image
 from app.face_utils import detect_and_crop_face
 from app.quality_check import quality_check
 
+BMI_STATUS_TH = {
+    "under": "ต่ำกว่าเกณฑ์",
+    "normal": "สมส่วน",
+    "over": "สูงกว่าเกณฑ์"
+}
+
+
 app = FastAPI()
 
 # =========================
@@ -87,10 +94,10 @@ async def predict(file: UploadFile = File(...)):
 
         # 6️⃣ Response
         return {
-            "category": cls_name,
-            "confidence": round(confidence, 3),
-            "bmi_estimate": bmi_estimate,
+            "status": BMI_STATUS_TH[cls_name],
+            "confidence": round(confidence, 3)
         }
+
 
     except Exception:
         traceback.print_exc()

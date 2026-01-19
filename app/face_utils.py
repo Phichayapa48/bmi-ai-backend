@@ -7,17 +7,17 @@ FACE_CASCADE = cv2.CascadeClassifier(
 )
 
 def detect_and_crop_face(image: Image.Image):
-    img = np.array(image)
+    img = np.array(image.convert("RGB"))
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
     faces = FACE_CASCADE.detectMultiScale(
         gray,
-        scaleFactor=1.05,     # 👈 ผ่อนลง
-        minNeighbors=2,       # 👈 ผ่อนลง
-        minSize=(40, 40)      # 👈 สำคัญมาก
+        scaleFactor=1.05,
+        minNeighbors=2,
+        minSize=(40, 40)
     )
 
-    # ✅ ไม่เจอหน้า → ใช้ทั้งภาพ (ห้าม return None)
+    # ❗ ไม่เจอหน้า → ใช้ทั้งภาพ
     if len(faces) == 0:
         return image, False
 

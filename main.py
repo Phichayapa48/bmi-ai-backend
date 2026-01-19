@@ -7,9 +7,14 @@ import torch
 from app.model import get_model
 from app.utils import preprocess_image
 from app.face_utils import detect_and_crop_face
-from app.quality_check import quality_check   # 🔥 เพิ่ม
+from app.quality_check import quality_check
 
 app = FastAPI()
+
+# =========================
+# GLOBAL MODEL
+# =========================
+model = None
 
 
 @app.get("/")
@@ -19,6 +24,7 @@ def health():
 
 @app.on_event("startup")
 def startup_event():
+    global model
     print("🚀 Loading model...")
     model = get_model()
     model.eval()
@@ -35,7 +41,7 @@ async def predict(file: UploadFile = File(...)):
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
         # =========================
-        # 2️⃣ ตรวจคุณภาพภาพ (Quality Gate)
+        # 2️⃣ ตรวจคุณภาพภาพ
         # =========================
         ok, reason = quality_check(image)
         if not ok:
@@ -45,30 +51,31 @@ async def predict(file: UploadFile = File(...)):
             }
 
         # =========================
-        # 3️⃣ ตรวจจับ + crop ใบหน้า
+        # 3️⃣ detect + crop ใบหน้า
         # =========================
         face = detect_and_crop_face(image)
 
         # =========================
-        # 4️⃣ preprocess ให้ตรงตอน train
+        # 4️⃣ preprocess (resize 224 🔥)
         # =========================
         x = preprocess_image(face)
 
         # =========================
         # 5️⃣ predict
         # =========================
-        model = get_model()
         with torch.no_grad():
             y = model(x)
             bmi = float(y.squeeze().item())
 
+        # (optional) calibration ถ้าอยากใช้
+        # bmi = bmi * 1.08 + 1.5
+
         return {
-            "bmi": bmi,
+            "bmi": round(bmi, 2),
             "message": "success"
         }
 
     except ValueError as ve:
-        # error จาก face detection (ไม่เจอหน้า / หลายหน้า)
         return {
             "error": "invalid_image",
             "message": str(ve)

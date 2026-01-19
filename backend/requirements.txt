@@ -11,4 +11,4 @@ requests
 numpy
 opencv-python-headless
 
-mediapipe==0.10.9
+mediapipe==0.10.30

@@ -1,42 +1,51 @@
-import cv2
 import numpy as np
 from PIL import Image
+import mediapipe as mp
 
-# โหลด Haar Cascade (มากับ opencv อยู่แล้ว)
-face_cascade = cv2.CascadeClassifier(
-    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-)
+mp_face = mp.solutions.face_detection
 
-def detect_and_crop_face(pil_image: Image.Image) -> Image.Image:
-    # PIL → numpy
+def detect_and_crop_face(
+    pil_image: Image.Image,
+    margin: float = 0.3
+) -> Image.Image:
+
     img = np.array(pil_image.convert("RGB"))
-    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    h, w, _ = img.shape
 
-    faces = face_cascade.detectMultiScale(
-        gray,
-        scaleFactor=1.3,
-        minNeighbors=5,
-        minSize=(80, 80)
-    )
+    with mp_face.FaceDetection(
+        model_selection=0,
+        min_detection_confidence=0.5
+    ) as detector:
 
-    if len(faces) == 0:
-        raise ValueError("ไม่พบใบหน้าในภาพ")
+        results = detector.process(img)
 
-    if len(faces) > 1:
-        raise ValueError("พบหลายใบหน้าในภาพ")
+        if not results.detections:
+            raise ValueError("ไม่พบใบหน้าในภาพ")
 
-    x, y, w, h = faces[0]
+        if len(results.detections) > 1:
+            raise ValueError("พบหลายใบหน้าในภาพ")
 
-    # กันหลุดขอบ
-    h_img, w_img, _ = img.shape
-    x1 = max(0, x)
-    y1 = max(0, y)
-    x2 = min(w_img, x + w)
-    y2 = min(h_img, y + h)
+        box = results.detections[0].location_data.relative_bounding_box
 
-    face = img[y1:y2, x1:x2]
+        cx = (box.xmin + box.width / 2) * w
+        cy = (box.ymin + box.height / 2) * h
 
-    if face.size == 0:
-        raise ValueError("crop ใบหน้าล้มเหลว")
+        size = max(box.width * w, box.height * h)
+        size = size * (1 + margin)
 
-    return Image.fromarray(face).convert("RGB")
+        x1 = int(cx - size / 2)
+        y1 = int(cy - size / 2)
+        x2 = int(cx + size / 2)
+        y2 = int(cy + size / 2)
+
+        x1 = max(0, x1)
+        y1 = max(0, y1)
+        x2 = min(w, x2)
+        y2 = min(h, y2)
+
+        face = img[y1:y2, x1:x2]
+
+        if face.size == 0:
+            raise ValueError("crop ใบหน้าล้มเหลว")
+
+        return Image.fromarray(face).convert("RGB")

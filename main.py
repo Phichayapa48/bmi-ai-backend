@@ -1,54 +1,108 @@
-import cv2
-import numpy as np
+from fastapi import FastAPI, UploadFile, File
 from PIL import Image
-from torchvision import transforms
+import io
+import traceback
+import torch
+
+from app.model import get_model
+from app.utils import preprocess_image
+from app.face_utils import detect_and_crop_face
+from app.quality_check import quality_check
 
 # =========================
-# Face detector
+# THAI LABEL
 # =========================
-FACE_CASCADE = cv2.CascadeClassifier(
-    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-)
-
-def detect_and_crop_face(image: Image.Image):
-    img = np.array(image.convert("RGB"))
-    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-
-    faces = FACE_CASCADE.detectMultiScale(
-        gray,
-        scaleFactor=1.05,     # 👈 ผ่อน
-        minNeighbors=2,       # 👈 ผ่อน
-        minSize=(40, 40)      # 👈 สำคัญมาก
-    )
-
-    # ✅ ไม่เจอหน้า → ใช้ทั้งภาพ แต่บอกว่าไม่เจอ
-    if len(faces) == 0:
-        return image, False
-
-    # เลือกหน้าที่ใหญ่ที่สุด
-    x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
-
-    pad = int(0.2 * w)
-    x1 = max(x - pad, 0)
-    y1 = max(y - pad, 0)
-    x2 = min(x + w + pad, img.shape[1])
-    y2 = min(y + h + pad, img.shape[0])
-
-    face = img[y1:y2, x1:x2]
-    return Image.fromarray(face), True
-
+BMI_STATUS_TH = {
+    "under": "ต่ำกว่าเกณฑ์",
+    "normal": "สมส่วน",
+    "over": "สูงกว่าเกณฑ์"
+}
 
 # =========================
-# Preprocess (ตรงตอน train)
+# CLASS CONFIG (ต้องตรงตอน train)
 # =========================
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),   # ✅ ตรงตอน train
-    transforms.ToTensor(),
-    transforms.Normalize(
-        mean=[0.485, 0.456, 0.406],
-        std=[0.229, 0.224, 0.225]
-    )
-])
+BMI_LABELS = {
+    0: ("under", 17.5),
+    1: ("normal", 22.0),
+    2: ("over", 27.5)
+}
 
-def preprocess_image(image):
-    return transform(image).unsqueeze(0)
+app = FastAPI()
+
+# =========================
+# GLOBAL MODEL
+# =========================
+model = None
+
+# =========================
+# HEALTH CHECK
+# =========================
+@app.get("/")
+def health():
+    return {"status": "ok", "service": "BMI AI Backend"}
+
+# =========================
+# LOAD MODEL
+# =========================
+@app.on_event("startup")
+def startup_event():
+    global model
+    print("🚀 Loading model...")
+    model = get_model()
+    model.eval()
+    print("✅ Model ready")
+
+# =========================
+# PREDICT
+# =========================
+@app.post("/predict")
+async def predict(file: UploadFile = File(...)):
+    try:
+        # 1️⃣ Read image
+        image_bytes = await file.read()
+        if not image_bytes:
+            return {
+                "error": "empty_file",
+                "message": "ไม่พบข้อมูลรูปภาพ"
+            }
+
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+        # 2️⃣ Quality check (เตือนเฉย ๆ ไม่ตัด)
+        ok, reason = quality_check(image)
+        if not ok:
+            print(f"⚠️ Quality warning: {reason}")
+
+        # 3️⃣ Detect & crop face
+        face_image, face_found = detect_and_crop_face(image)
+
+        if face_found:
+            print("🙂 พบใบหน้า → ใช้ภาพที่ crop")
+        else:
+            print("⚠️ ไม่พบใบหน้า → ใช้ทั้งภาพ")
+
+        # 4️⃣ Preprocess (224x224 ตรง train)
+        x = preprocess_image(face_image)
+        x = x.to(next(model.parameters()).device)
+
+        # 5️⃣ Predict (ใช้ผลโมเดลล้วน ๆ)
+        with torch.no_grad():
+            logits = model(x)
+            probs = torch.softmax(logits, dim=1)
+
+            cls_idx = int(probs.argmax(dim=1).item())
+            cls_name, _ = BMI_LABELS[cls_idx]
+            confidence = float(probs[0, cls_idx])
+
+        # 6️⃣ Response (สำหรับผู้ใช้)
+        return {
+            "status": BMI_STATUS_TH[cls_name],
+            "confidence": round(confidence, 3)
+        }
+
+    except Exception:
+        traceback.print_exc()
+        return {
+            "error": "prediction_failed",
+            "message": "ไม่สามารถประเมิน BMI จากภาพนี้ได้"
+        }

@@ -24,24 +24,19 @@ def download_model():
         return
 
     if not MODEL_URL:
-        raise RuntimeError("❌ MODEL_URL is not set in environment variables")
+        raise RuntimeError("❌ MODEL_URL is not set")
 
     print(f"⬇️ Downloading model from: {MODEL_URL}")
 
-    try:
-        r = requests.get(MODEL_URL, stream=True, timeout=60)
-        r.raise_for_status()
+    r = requests.get(MODEL_URL, stream=True, timeout=60)
+    r.raise_for_status()
 
-        with open(MODEL_PATH, "wb") as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
+    with open(MODEL_PATH, "wb") as f:
+        for chunk in r.iter_content(8192):
+            if chunk:
+                f.write(chunk)
 
-        print("✅ Model downloaded successfully")
-
-    except Exception as e:
-        print("❌ Failed to download model")
-        raise RuntimeError(str(e))
+    print("✅ Model downloaded successfully")
 
 
 # =========================
@@ -49,14 +44,15 @@ def download_model():
 # =========================
 def build_model():
     """
-    IMPORTANT:
+    ⚠️ IMPORTANT
     Architecture ต้องตรงกับตอน train 100%
+    โมเดลนี้ train มาเป็น 3-class
     """
     model = models.mobilenet_v3_large(weights=None)
 
     model.classifier[3] = nn.Linear(
         model.classifier[3].in_features,
-        1  # regression output (BMI)
+        3   # ✅ ตรงกับ checkpoint
     )
 
     return model
@@ -74,12 +70,8 @@ def load_model():
     model = build_model()
 
     print("📂 Loading model weights (.pth)")
-    try:
-        state_dict = torch.load(MODEL_PATH, map_location=DEVICE)
-        model.load_state_dict(state_dict)
-    except Exception as e:
-        print("❌ Failed to load model weights")
-        raise RuntimeError(str(e))
+    state_dict = torch.load(MODEL_PATH, map_location=DEVICE)
+    model.load_state_dict(state_dict)
 
     model.to(DEVICE)
     model.eval()
@@ -89,7 +81,7 @@ def load_model():
 
 
 # =========================
-# Singleton access
+# Singleton
 # =========================
 def get_model():
     global _MODEL

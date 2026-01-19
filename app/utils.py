@@ -1,36 +1,45 @@
-from torchvision import transforms
+import cv2
+import numpy as np
 import torch
+from PIL import Image
+from torchvision import transforms
 
-def smart_crop(image):
-    """
-    crop กลางภาพ + bias ลงล่าง
-    ได้หน้า + คอ + ไหล่
-    """
-    w, h = image.size
-    crop_size = int(min(w, h) * 0.85)
+# =========================
+# Face detector
+# =========================
+face_cascade = cv2.CascadeClassifier(
+    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+)
 
-    cx = w // 2
-    cy = int(h * 0.45)
+def detect_and_crop_face(pil_img):
+    img = np.array(pil_img.convert("RGB"))
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
-    left = max(cx - crop_size // 2, 0)
-    top = max(cy - crop_size // 2, 0)
-    right = min(left + crop_size, w)
-    bottom = min(top + crop_size, h)
+    faces = face_cascade.detectMultiScale(
+        gray,
+        scaleFactor=1.1,
+        minNeighbors=5,
+        minSize=(80, 80)
+    )
 
-    return image.crop((left, top, right, bottom))
+    if len(faces) == 0:
+        return None
 
+    x, y, w, h = faces[0]
+    face = img[y:y+h, x:x+w]
+    return Image.fromarray(face)
 
-def preprocess_image(image):
-    image = smart_crop(image)
+# =========================
+# Preprocess (ตรงตอน train)
+# =========================
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),  # ✅ ตรง train
+    transforms.ToTensor(),
+    transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
+    )
+])
 
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),  # ✅ ตามที่เพื่อนบอก + ตรงตอน train
-        transforms.ToTensor(),
-        transforms.Normalize(
-            mean=[0.485, 0.456, 0.406],
-            std=[0.229, 0.224, 0.225]
-        )
-    ])
-
-    x = transform(image).unsqueeze(0)
-    return x
+def preprocess_image(face_img):
+    return transform(face_img).unsqueeze(0)

@@ -1,10 +1,12 @@
 fastapi
 uvicorn
-torch
-torchvision
 pillow
 python-multipart
 requests
 numpy
 opencv-python-headless
 setuptools
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2
+torchvision==0.17.2

@@ -15,7 +15,6 @@ BMI_STATUS_TH = {
     "over": "สูงกว่าเกณฑ์"
 }
 
-
 app = FastAPI()
 
 # =========================
@@ -24,12 +23,12 @@ app = FastAPI()
 model = None
 
 # =========================
-# CLASS CONFIG (ต้องตรงตอน train)
+# CLASS CONFIG (ตรงตอน train)
 # =========================
 BMI_LABELS = {
-    0: ("under", 17.5),
-    1: ("normal", 22.0),
-    2: ("over", 27.5)
+    0: "under",
+    1: "normal",
+    2: "over"
 }
 
 # =========================
@@ -66,38 +65,41 @@ async def predict(file: UploadFile = File(...)):
 
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        # 2️⃣ Quality check (soft)
+        # 2️⃣ Quality check (soft warning)
         ok, reason = quality_check(image)
         if not ok:
             print(f"⚠️ Quality warning: {reason}")
 
-        # 3️⃣ Detect face (❗ ต้องเจอเท่านั้น)
-        face_image = detect_and_crop_face(image)
-        if face_image is None:
-            return {
-                "error": "no_face_detected",
-                "message": "ไม่พบใบหน้าในภาพ กรุณาอัปโหลดภาพใบหน้าคนเท่านั้น"
-            }
+        # 3️⃣ Detect face (soft logic)
+        face_image, face_found = detect_and_crop_face(image)
 
-        # 4️⃣ Preprocess (resize 224)
+        # ❗ ถ้าไม่เจอหน้าเลย + confidence ต่ำ → ค่อย reject
+        # (ตอนนี้ยังให้โมเดลลองก่อน)
         x = preprocess_image(face_image)
         x = x.to(next(model.parameters()).device)
 
-        # 5️⃣ Predict (NO temperature / NO trick)
+        # 4️⃣ Predict
         with torch.no_grad():
             logits = model(x)
             probs = torch.softmax(logits, dim=1)
 
             cls_idx = int(probs.argmax(dim=1).item())
-            cls_name, bmi_estimate = BMI_LABELS[cls_idx]
             confidence = float(probs[0, cls_idx])
 
-        # 6️⃣ Response
+        cls_name = BMI_LABELS.get(cls_idx)
+
+        # 5️⃣ Hard reject เฉพาะกรณี "ไม่น่าใช่คนจริง ๆ"
+        if not face_found and confidence < 0.55:
+            return {
+                "error": "no_clear_face",
+                "message": "ไม่พบใบหน้าที่ชัดเจน กรุณาถ่ายภาพใบหน้าคนเท่านั้น"
+            }
+
+        # 6️⃣ Response (ฝั่งผู้ใช้)
         return {
             "status": BMI_STATUS_TH[cls_name],
             "confidence": round(confidence, 3)
         }
-
 
     except Exception:
         traceback.print_exc()

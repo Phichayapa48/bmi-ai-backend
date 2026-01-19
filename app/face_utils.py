@@ -7,7 +7,7 @@ FACE_CASCADE = cv2.CascadeClassifier(
 )
 
 def detect_and_crop_face(image: Image.Image):
-    img = np.array(image.convert("RGB"))
+    img = np.array(image)
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
     faces = FACE_CASCADE.detectMultiScale(
@@ -21,7 +21,6 @@ def detect_and_crop_face(image: Image.Image):
     if len(faces) == 0:
         return image, False
 
-    # เลือกหน้าที่ใหญ่สุด
     x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
 
     pad = int(0.2 * w)

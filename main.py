@@ -8,24 +8,7 @@ from app.model import get_model
 from app.utils import preprocess_image
 from app.face_utils import detect_and_crop_face
 from app.quality_check import quality_check
-
-# =========================
-# THAI LABEL
-# =========================
-BMI_STATUS_TH = {
-    "under": "ต่ำกว่าเกณฑ์",
-    "normal": "สมส่วน",
-    "over": "สูงกว่าเกณฑ์"
-}
-
-# =========================
-# CLASS CONFIG (ต้องตรงตอน train)
-# =========================
-BMI_LABELS = {
-    0: ("under", 17.5),
-    1: ("normal", 22.0),
-    2: ("over", 27.5)
-}
+from app.decision import decide
 
 app = FastAPI()
 
@@ -35,11 +18,29 @@ app = FastAPI()
 model = None
 
 # =========================
+# CLASS CONFIG (ต้องตรงตอน train)
+# =========================
+BMI_LABELS = {
+    0: "under",
+    1: "normal",
+    2: "over"
+}
+
+BMI_STATUS_TH = {
+    "under": "ต่ำกว่าเกณฑ์",
+    "normal": "สมส่วน",
+    "over": "สูงกว่าเกณฑ์"
+}
+
+# =========================
 # HEALTH CHECK
 # =========================
 @app.get("/")
 def health():
-    return {"status": "ok", "service": "BMI AI Backend"}
+    return {
+        "status": "ok",
+        "service": "BMI AI Backend"
+    }
 
 # =========================
 # LOAD MODEL
@@ -68,36 +69,44 @@ async def predict(file: UploadFile = File(...)):
 
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        # 2️⃣ Quality check (เตือนเฉย ๆ ไม่ตัด)
+        # 2️⃣ Quality check (soft check)
         ok, reason = quality_check(image)
         if not ok:
             print(f"⚠️ Quality warning: {reason}")
 
-        # 3️⃣ Detect & crop face
-        face_image, face_found = detect_and_crop_face(image)
+        # 3️⃣ Detect face (ไม่บังคับ แต่ลดความมั่นใจ)
+        face_image, has_face = detect_and_crop_face(image)
 
-        if face_found:
-            print("🙂 พบใบหน้า → ใช้ภาพที่ crop")
-        else:
-            print("⚠️ ไม่พบใบหน้า → ใช้ทั้งภาพ")
-
-        # 4️⃣ Preprocess (224x224 ตรง train)
+        # 4️⃣ Preprocess (224x224)
         x = preprocess_image(face_image)
         x = x.to(next(model.parameters()).device)
 
-        # 5️⃣ Predict (ใช้ผลโมเดลล้วน ๆ)
+        # 5️⃣ Predict
         with torch.no_grad():
             logits = model(x)
             probs = torch.softmax(logits, dim=1)
 
             cls_idx = int(probs.argmax(dim=1).item())
-            cls_name, _ = BMI_LABELS[cls_idx]
+            cls_name = BMI_LABELS[cls_idx]
             confidence = float(probs[0, cls_idx])
 
-        # 6️⃣ Response (สำหรับผู้ใช้)
+        # 6️⃣ ถ้าไม่เจอหน้า → ลด confidence
+        if not has_face:
+            confidence *= 0.7
+
+        # 7️⃣ Decision layer (ตัดสินใจจริง)
+        decision = decide(cls_name, confidence)
+
+        if not decision["ok"]:
+            return {
+                "error": "low_confidence",
+                "message": decision["message"]
+            }
+
+        # 8️⃣ Final response
         return {
-            "status": BMI_STATUS_TH[cls_name],
-            "confidence": round(confidence, 3)
+            "status": BMI_STATUS_TH[decision["class"]],
+            "confidence": decision["confidence"]
         }
 
     except Exception:

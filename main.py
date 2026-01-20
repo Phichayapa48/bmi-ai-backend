@@ -12,7 +12,7 @@ from app.decision import decide
 app = FastAPI()
 
 # =========================
-# LOAD MODEL
+# LOAD MODEL (singleton)
 # =========================
 model = get_model()
 model.eval()
@@ -27,6 +27,13 @@ BMI_LABELS = {
 }
 
 # =========================
+# HEALTH CHECK
+# =========================
+@app.get("/")
+def health():
+    return {"status": "ok", "service": "BMI AI Backend"}
+
+# =========================
 # PREDICT
 # =========================
 @app.post("/predict")
@@ -36,22 +43,18 @@ async def predict(file: UploadFile = File(...)):
         image_bytes = await file.read()
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        # 2️⃣ Face detection (GATE)
+        # 2️⃣ Face gate (สำคัญที่สุด)
         face_image, has_face = detect_and_crop_face(image)
-
-        # 3️⃣ Quality check (ใช้ face เป็นหลัก)
-        quality_ok, _ = quality_check(face_image if has_face else image)
-
-        # ❌ ถ้าไม่เจอหน้า → reject ทันที
         if not has_face:
             return decide(
                 cls_name=None,
                 confidence=0.0,
                 face_ok=False,
-                quality_ok=quality_ok
+                quality_ok=True
             )
 
-        # ❌ ถ้าภาพคุณภาพไม่ผ่าน
+        # 3️⃣ Quality gate (เช็กเฉพาะหน้า)
+        quality_ok, _ = quality_check(face_image)
         if not quality_ok:
             return decide(
                 cls_name=None,
@@ -73,7 +76,7 @@ async def predict(file: UploadFile = File(...)):
             confidence = float(probs[0, cls_idx])
             cls_name = BMI_LABELS[cls_idx]
 
-        # 6️⃣ Final decision (ศูนย์รวม logic ทั้งหมด)
+        # 6️⃣ Final decision (ศูนย์รวม logic)
         return decide(
             cls_name=cls_name,
             confidence=confidence,

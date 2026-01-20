@@ -39,11 +39,19 @@ def health():
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     try:
+        # 🔒 กันไฟล์ไม่ใช่รูป
+        if not file.content_type.startswith("image/"):
+            return {
+                "ok": False,
+                "error": "invalid_file",
+                "message": "กรุณาอัปโหลดไฟล์รูปภาพเท่านั้น"
+            }
+
         # 1️⃣ Read image
         image_bytes = await file.read()
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        # 2️⃣ Face gate
+        # 2️⃣ Face gate (สำคัญที่สุด)
         face_image, has_face = detect_and_crop_face(image)
         if not has_face:
             return decide(
@@ -53,7 +61,7 @@ async def predict(file: UploadFile = File(...)):
                 quality_ok=True
             )
 
-        # 3️⃣ Quality gate
+        # 3️⃣ Quality gate (เช็กเฉพาะหน้า)
         quality_ok, _ = quality_check(face_image)
         if not quality_ok:
             return decide(
@@ -75,6 +83,9 @@ async def predict(file: UploadFile = File(...)):
             cls_idx = int(probs.argmax(dim=1).item())
             confidence = float(probs[0, cls_idx])
             cls_name = BMI_LABELS[cls_idx]
+
+        # 🔍 Debug log (เอาออกได้ตอน prod)
+        print(f"[PREDICT] {cls_name} | conf={confidence:.3f}")
 
         # 6️⃣ Final decision
         return decide(

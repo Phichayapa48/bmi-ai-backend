@@ -12,16 +12,22 @@ _MODEL = None
 
 def download_model():
     if os.path.exists(MODEL_PATH):
+        print("📦 Model file already exists")
         return
-    if not MODEL_URL:
-        raise RuntimeError("MODEL_URL not set")
 
+    if not MODEL_URL:
+        raise RuntimeError("❌ MODEL_URL is not set")
+
+    print(f"⬇️ Downloading model from: {MODEL_URL}")
     r = requests.get(MODEL_URL, stream=True, timeout=60)
     r.raise_for_status()
 
     with open(MODEL_PATH, "wb") as f:
         for chunk in r.iter_content(8192):
-            f.write(chunk)
+            if chunk:
+                f.write(chunk)
+
+    print("✅ Model downloaded")
 
 def build_model():
     model = models.mobilenet_v3_large(weights=None)
@@ -40,11 +46,11 @@ def load_model():
     model.to(DEVICE)
     model.eval()
 
-    # sanity check
     with torch.no_grad():
-        out = model(torch.zeros(1, 3, 224, 224).to(DEVICE))
-        assert out.shape[-1] == 3
+        dummy = torch.zeros(1, 3, 224, 224).to(DEVICE)
+        assert model(dummy).shape[-1] == 3
 
+    print(f"✅ Model loaded on {DEVICE}")
     return model
 
 def get_model():

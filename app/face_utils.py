@@ -11,18 +11,24 @@ def detect_and_crop_face(image: Image.Image):
     image = image.convert("RGB")
     img = np.array(image)
 
-    # resize กันรูปใหญ่เกิน
     h, w, _ = img.shape
+
+    # ❌ กันรูปเล็กเกิน (สำคัญ)
+    if h < 120 or w < 120:
+        return image, False
+
+    # resize กันรูปใหญ่เกิน
     if max(h, w) > 1000:
         scale = 1000 / max(h, w)
         img = cv2.resize(img, (int(w * scale), int(h * scale)))
+        h, w, _ = img.shape
 
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
     faces = FACE_CASCADE.detectMultiScale(
         gray,
         scaleFactor=1.1,
-        minNeighbors=4,      # 👈 เข้มขึ้น กันมั่ว
+        minNeighbors=4,
         minSize=(40, 40)
     )
 
@@ -30,14 +36,20 @@ def detect_and_crop_face(image: Image.Image):
         return image, False
 
     # เลือกหน้าที่ใหญ่สุด
-    x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
+    x, y, fw, fh = max(faces, key=lambda f: f[2] * f[3])
+
+    # ❌ guard: หน้าต้องใหญ่พอเมื่อเทียบกับภาพ
+    face_ratio = (fw * fh) / (h * w)
+    if face_ratio < 0.02:   # < 2% ถือว่าเล็กเกิน
+        return image, False
 
     # padding รอบหน้า
-    pad = int(0.25 * w)
+    pad = int(0.25 * fw)
     x1 = max(x - pad, 0)
     y1 = max(y - pad, 0)
-    x2 = min(x + w + pad, img.shape[1])
-    y2 = min(y + h + pad, img.shape[0])
+    x2 = min(x + fw + pad, w)
+    y2 = min(y + fh + pad, h)
 
     face = img[y1:y2, x1:x2]
+
     return Image.fromarray(face), True

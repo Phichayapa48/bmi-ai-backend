@@ -43,7 +43,7 @@ async def predict(file: UploadFile = File(...)):
         image_bytes = await file.read()
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        # 2️⃣ Face gate (สำคัญที่สุด)
+        # 2️⃣ Face gate
         face_image, has_face = detect_and_crop_face(image)
         if not has_face:
             return decide(
@@ -53,7 +53,7 @@ async def predict(file: UploadFile = File(...)):
                 quality_ok=True
             )
 
-        # 3️⃣ Quality gate (เช็กเฉพาะหน้า)
+        # 3️⃣ Quality gate
         quality_ok, _ = quality_check(face_image)
         if not quality_ok:
             return decide(
@@ -76,7 +76,7 @@ async def predict(file: UploadFile = File(...)):
             confidence = float(probs[0, cls_idx])
             cls_name = BMI_LABELS[cls_idx]
 
-        # 6️⃣ Final decision (ศูนย์รวม logic)
+        # 6️⃣ Final decision
         return decide(
             cls_name=cls_name,
             confidence=confidence,

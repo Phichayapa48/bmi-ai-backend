@@ -68,19 +68,34 @@ async def predict(file: UploadFile = File(...)):
 
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        # 2️⃣ Quality check (soft)
-        ok, reason = quality_check(image)
-        if not ok:
-            print(f"⚠️ Quality warning: {reason}")
+        # ❗ กันรูปเล็กเกิน
+        if image.width < 80 or image.height < 80:
+            return {
+                "error": "image_too_small",
+                "message": "ภาพมีขนาดเล็กเกินไป กรุณาถ่ายใหม่"
+            }
 
-        # 3️⃣ Detect face (ช่วย crop แต่ไม่ตัดสิน)
+        # 2️⃣ Quality gate
+        quality_ok, reason = quality_check(image)
+        if not quality_ok:
+            return {
+                "error": "bad_quality",
+                "message": "ภาพไม่ชัดหรือแสงไม่เพียงพอ กรุณาถ่ายใหม่"
+            }
+
+        # 3️⃣ Face gate (สำคัญมาก)
         face_image, has_face = detect_and_crop_face(image)
+        if not has_face:
+            return {
+                "error": "no_face",
+                "message": "ไม่พบใบหน้าที่ชัดเจน กรุณาถ่ายภาพใบหน้าตรง ไม่ใส่หน้ากาก"
+            }
 
-        # 4️⃣ Preprocess (224x224)
+        # 4️⃣ Preprocess
         x = preprocess_image(face_image)
         x = x.to(next(model.parameters()).device)
 
-        # 5️⃣ Predict (โมเดลตัดสินจริง)
+        # 5️⃣ Predict
         with torch.no_grad():
             logits = model(x)
             probs = torch.softmax(logits, dim=1)
@@ -89,18 +104,25 @@ async def predict(file: UploadFile = File(...)):
             cls_name = BMI_LABELS[cls_idx]
             confidence = float(probs[0, cls_idx])
 
-        # 6️⃣ ถ้าไม่เจอหน้า → ลดความมั่นใจ (UX only)
-        if not has_face:
-            confidence *= 0.7
+        # 🔍 debug log (เอาไว้ดู bias)
+        print("🧠 PRED:", cls_name, confidence)
 
-        # 7️⃣ ถ้าความมั่นใจต่ำมาก → ขอรูปใหม่
-        if confidence < 0.45:
+        # 6️⃣ Threshold แยกตามคลาส (แก้ under bias)
+        class_thresholds = {
+            "under": 0.60,
+            "normal": 0.45,
+            "over": 0.50
+        }
+
+        threshold = class_thresholds.get(cls_name, 0.5)
+
+        if confidence < threshold:
             return {
                 "error": "low_confidence",
-                "message": "ไม่สามารถประเมินได้อย่างมั่นใจ กรุณาถ่ายภาพใบหน้าให้ชัดเจน"
+                "message": "ไม่สามารถประเมินได้อย่างมั่นใจ กรุณาถ่ายภาพใหม่"
             }
 
-        # 8️⃣ Final response
+        # 7️⃣ Final response
         return {
             "status": BMI_STATUS_TH[cls_name],
             "confidence": round(confidence, 3)

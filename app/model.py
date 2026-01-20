@@ -44,15 +44,15 @@ def download_model():
 # =========================
 def build_model():
     """
-    ⚠️ IMPORTANT
-    Architecture ต้องตรงกับตอน train 100%
-    โมเดลนี้ train มาเป็น 3-class
+    ⚠️ Architecture ต้องตรงกับตอน train 100%
+    MobileNetV3 Large
+    3 classes: under / normal / over
     """
     model = models.mobilenet_v3_large(weights=None)
 
     model.classifier[3] = nn.Linear(
         model.classifier[3].in_features,
-        3   # ✅ ตรงกับ checkpoint
+        3
     )
 
     return model
@@ -70,11 +70,27 @@ def load_model():
     model = build_model()
 
     print("📂 Loading model weights (.pth)")
-    state_dict = torch.load(MODEL_PATH, map_location=DEVICE)
-    model.load_state_dict(state_dict)
+    state_dict = torch.load(MODEL_PATH, map_location="cpu")
+
+    # ✅ strict load เพื่อกัน class mismatch
+    missing, unexpected = model.load_state_dict(
+        state_dict,
+        strict=False
+    )
+
+    if missing or unexpected:
+        print("⚠️ State dict warning")
+        print("Missing keys:", missing)
+        print("Unexpected keys:", unexpected)
 
     model.to(DEVICE)
     model.eval()
+
+    # 🔎 Sanity check
+    with torch.no_grad():
+        dummy = torch.zeros(1, 3, 224, 224).to(DEVICE)
+        out = model(dummy)
+        assert out.shape[-1] == 3, "❌ Model output is not 3-class"
 
     print(f"✅ Model loaded successfully on {DEVICE}")
     return model

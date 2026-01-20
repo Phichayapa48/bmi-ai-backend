@@ -7,11 +7,11 @@ FACE_CASCADE = cv2.CascadeClassifier(
 )
 
 def detect_and_crop_face(image: Image.Image):
-    # ✅ บังคับเป็น RGB ก่อน
+    # บังคับ RGB
     image = image.convert("RGB")
     img = np.array(image)
 
-    # ✅ resize ถ้ารูปใหญ่เกิน (สำคัญมาก)
+    # resize กันรูปใหญ่เกิน
     h, w, _ = img.shape
     if max(h, w) > 1000:
         scale = 1000 / max(h, w)
@@ -21,16 +21,18 @@ def detect_and_crop_face(image: Image.Image):
 
     faces = FACE_CASCADE.detectMultiScale(
         gray,
-        scaleFactor=1.1,      # 👈 ผ่อน
-        minNeighbors=3,       # 👈 ผ่อน
-        minSize=(30, 30)      # 👈 ผ่อน
+        scaleFactor=1.1,
+        minNeighbors=4,      # 👈 เข้มขึ้น กันมั่ว
+        minSize=(40, 40)
     )
 
     if len(faces) == 0:
         return image, False
 
+    # เลือกหน้าที่ใหญ่สุด
     x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
 
+    # padding รอบหน้า
     pad = int(0.25 * w)
     x1 = max(x - pad, 0)
     y1 = max(y - pad, 0)

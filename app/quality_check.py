@@ -9,7 +9,6 @@ def quality_check(image: Image.Image):
         return False, "รูปไม่ถูกต้อง"
 
     h, w, _ = img.shape
-
     if h < 120 or w < 120:
         return False, "ใบหน้าเล็กเกินไป"
 
